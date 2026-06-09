@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+# Attach to (or create) the persistent tmux session inside the running container.
+#
+# The container's entrypoint only runs the firewall and `sleep infinity`, so the
+# actual work lives in a long-lived tmux session *inside* the container. That
+# session survives detach/terminal-close and only dies when the container is
+# recreated -- which is exactly why this container is excluded from watchtower.
+#
+# Usage:
+#   bin/cc            # attach to (or create) session "main"
+#   CC_SESSION=foo bin/cc
+#
+# Detach with the tmux prefix (Ctrl-Space) then `d`. Re-run to reattach.
+set -eu
+
+CONTAINER="${CC_CONTAINER:-claude-code}"
+SESSION="${CC_SESSION:-main}"
+
+# Fail early with a clear message if the container is not up.
+if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+  echo "Container '$CONTAINER' is not running. Start it with: docker compose up -d" >&2
+  exit 1
+fi
+
+exec docker exec -it "$CONTAINER" tmux new-session -A -s "$SESSION"

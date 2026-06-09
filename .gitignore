@@ -1,0 +1,12 @@
+# Runtime bind-mount data. May contain Claude credentials/config and work files.
+.claude/
+data/
+cc-workspace
+
+# Scratch/design notes
+.tmp/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~

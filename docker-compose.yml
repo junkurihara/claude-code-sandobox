@@ -1,0 +1,41 @@
+name: claude-code-sandbox
+
+# No named volumes: everything is a bind mount so it survives `docker system prune --volumes`.
+services:
+  claude-code:
+    build:
+      context: .
+      args:
+        TZ: "Asia/Tokyo"
+        CLAUDE_CODE_VERSION: latest
+        USER_UID: "1000"
+        USER_GID: "1000"
+    image: jqtype/claude-code-sandbox
+    container_name: claude-code
+    restart: unless-stopped
+    # Opt out of watchtower auto-updates. This container is meant to keep a
+    # long-running tmux/Claude Code session alive; watchtower would stop, remove
+    # and recreate the container on every image update, killing the live session.
+    # Update manually instead:
+    #   docker compose pull && docker compose up -d
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    # No `network` key: a dedicated default network is created, isolating this
+    # service from others.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      CLAUDE_CONFIG_DIR: /home/dev/.claude
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      # All bind mounts: not affected by `docker system prune --volumes` (outside
+      # Docker's management). The docker socket is intentionally never mounted.
+      - ./cc-workspace:/workspace:delegated
+      - ./data/claude:/home/dev/.claude
+      - ./data/history:/commandhistory
+    entrypoint: ["/bin/sh", "-c", "sudo /usr/local/bin/init-firewall.sh && sleep infinity"]
