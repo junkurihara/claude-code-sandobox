@@ -13,13 +13,18 @@ services:
     image: jqtype/claude-code-sandbox
     container_name: claude-code
     restart: unless-stopped
-    # Opt out of watchtower auto-updates. This container is meant to keep a
-    # long-running tmux/Claude Code session alive; watchtower would stop, remove
-    # and recreate the container on every image update, killing the live session.
-    # Update manually instead:
-    #   docker compose pull && docker compose up -d
+    # Let watchtower manage this container, but never kill an active session.
+    # The pre-update hook runs inside the container before an update and returns
+    # exit code 75 (EX_TEMPFAIL) while a Claude Code process is running, which
+    # tells watchtower to postpone the update until the next poll. When no Claude
+    # session is running it returns 0 and watchtower recreates the container with
+    # the new image. See wt-preupdate.sh.
+    #
+    # This requires lifecycle hooks to be enabled on the *watchtower* service
+    # (not here): WATCHTOWER_LIFECYCLE_HOOKS=true, or flag --enable-lifecycle-hooks.
     labels:
-      - "com.centurylinklabs.watchtower.enable=false"
+      - "com.centurylinklabs.watchtower.lifecycle.pre-update=/usr/local/bin/wt-preupdate"
+      - "com.centurylinklabs.watchtower.lifecycle.pre-update-timeout=1"
     # No `network` key: a dedicated default network is created, isolating this
     # service from others.
     cap_add:

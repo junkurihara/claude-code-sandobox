@@ -50,6 +50,10 @@ RUN mkdir -p /workspace /home/${USERNAME}/.claude /commandhistory && \
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
 RUN chmod +x /usr/local/bin/init-firewall.sh
 
+# Watchtower pre-update hook (postpones updates while Claude Code is running)
+COPY wt-preupdate.sh /usr/local/bin/wt-preupdate
+RUN chmod +x /usr/local/bin/wt-preupdate
+
 # tmux config: set the prefix to Ctrl-Space (does not clash with emacs-style keybindings)
 RUN printf '%s\n' \
   'unbind C-b' \

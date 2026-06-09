@@ -66,19 +66,46 @@ These paths are bind-mounted into the container and are git-ignored:
 
 ## Updating
 
-This container is **excluded from [watchtower](https://containrrr.dev/watchtower/)**
-via the `com.centurylinklabs.watchtower.enable=false` label. Watchtower updates
-by stopping, removing, and recreating the container, which would kill the live
-tmux/Claude Code session. Update on your own schedule instead, when no session
-is active:
+[watchtower](https://github.com/nicholas-fedor/watchtower) updates a container
+by stopping, removing, and recreating it, which would kill a live tmux/Claude
+Code session. To get automatic updates without ever interrupting an active
+session, this container uses a **pre-update lifecycle hook**
+(`wt-preupdate.sh`):
+
+- While a Claude Code process is running, the hook exits `75` (EX_TEMPFAIL),
+  which tells watchtower to **postpone** the update until its next poll.
+- Once Claude Code is no longer running, the hook exits `0` and watchtower
+  recreates the container with the new image.
+
+This requires lifecycle hooks to be enabled **on the watchtower service**
+(not on this container):
+
+```yaml
+# in your watchtower service
+environment:
+  WATCHTOWER_LIFECYCLE_HOOKS: "true" # or run watchtower with --enable-lifecycle-hooks
+```
+
+Caveats:
+
+- An idle Claude Code session sitting at its prompt is still a running process,
+  so updates apply only after you fully **quit** Claude Code. If a session is
+  always running, updates never apply.
+- Verify the hook's process match works for your setup with
+  `docker exec claude-code sh -c 'ps -ef | grep -i claude'`, and adjust the
+  `pgrep` pattern in `wt-preupdate.sh` if needed.
+
+You can always update manually instead:
 
 ```sh
 docker compose pull   # or: docker compose build --pull
 docker compose up -d
 ```
 
-Note that `CLAUDE_CODE_VERSION` defaults to `latest` and is pinned at build
-time, so rebuilding is what picks up new Claude Code releases.
+**Alternative — monitor-only.** If you would rather have watchtower only pull
+and notify (never recreate), drop the lifecycle labels and use
+`com.centurylinklabs.watchtower.monitor-only=true` instead, then apply updates
+yourself with `docker compose up -d`.
 
 ## Firewall
 
