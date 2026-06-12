@@ -32,34 +32,60 @@ SSH disconnects and terminal closes.
 # Build and start the container in the background.
 docker compose up -d
 
-# Attach to (or create) the persistent tmux session, then run `claude` inside.
-./bin/cc
+# Place (clone) the repos you want to work on under ./cc-workspace, e.g.
+#   git clone <url> cc-workspace/my-repo
+
+# Attach to (or create) a per-repo tmux session, then run `claude` inside.
+./bin/cc my-repo
 ```
 
 Detach from tmux with the prefix `Ctrl-Space` then `d`. The session keeps
-running inside the container; re-run `./bin/cc` to reattach.
+running inside the container; re-run `./bin/cc my-repo` to reattach.
 
-`bin/cc` is a thin host-side wrapper around:
+### Parallel work across repos
+
+Each repo under `/workspace` gets its **own** tmux session, rooted at that
+repo's directory, so you can run several Claude Code instances in parallel:
+attach to one, start `claude`, detach (`Ctrl-Space` `d`), and move to the next.
+All sessions live inside the single container and survive detach/terminal-close.
 
 ```sh
-docker exec -it claude-code tmux new-session -A -s main
+./bin/cc            # list active sessions and available repos
+./bin/cc repo-a     # attach to (or create) a session for /workspace/repo-a
+./bin/cc repo-b     # ...in parallel, a separate session for /workspace/repo-b
+./bin/cc -l         # list only
 ```
 
-You can override the container or session name:
+`bin/cc <repo>` is a thin host-side wrapper around:
 
 ```sh
-CC_CONTAINER=claude-code CC_SESSION=main ./bin/cc
+docker exec -it claude-code tmux new-session -A -s <repo> -c /workspace/<repo>
+```
+
+(Session names cannot contain `.`/`:`, so those are sanitized to `_`; the
+working directory is still set to the exact repo path.)
+
+Environment overrides:
+
+```sh
+CC_CONTAINER=claude-code ./bin/cc my-repo   # container name (default: claude-code)
+CC_WORKDIR=/workspace ./bin/cc my-repo      # workspace root (default: /workspace)
+CC_SESSION=main ./bin/cc                     # attach to an arbitrary session name
 ```
 
 ## Directory layout (host side)
 
 These paths are bind-mounted into the container and are git-ignored:
 
-| Host path        | Container path      | Purpose                          |
-| ---------------- | ------------------- | -------------------------------- |
-| `./cc-workspace` | `/workspace`        | Your code / working directory    |
-| `./data/claude`  | `/home/dev/.claude` | Claude Code config + credentials |
-| `./data/history` | `/commandhistory`   | Shell history                    |
+| Host path               | Container path        | Purpose                          |
+| ----------------------- | --------------------- | -------------------------------- |
+| `./cc-workspace`        | `/workspace`          | Workspace root (holds the repos) |
+| `./cc-workspace/<repo>` | `/workspace/<repo>`   | One repo per subdirectory        |
+| `./data/claude`         | `/home/dev/.claude`   | Claude Code config + credentials |
+| `./data/history`        | `/commandhistory`     | Shell history                    |
+
+Put one repository per subdirectory under `cc-workspace/`. `bin/cc <repo>`
+opens a session rooted at the matching `/workspace/<repo>`.
 
 > **Do not commit `data/`.** It contains Claude credentials. It is listed in
 > `.gitignore`.

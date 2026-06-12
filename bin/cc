@@ -1,20 +1,63 @@
 #!/usr/bin/env sh
-# Attach to (or create) the persistent tmux session inside the running container.
+# Attach to (or create) a per-repo tmux session inside the running container.
 #
 # The container's entrypoint only runs the firewall and `sleep infinity`, so the
-# actual work lives in a long-lived tmux session *inside* the container. That
-# session survives detach/terminal-close and only dies when the container is
-# recreated -- which is exactly why this container is excluded from watchtower.
+# actual work lives in long-lived tmux sessions *inside* the container. Each repo
+# under /workspace gets its own session, so you can run several Claude Code
+# instances in parallel: attach to one, start `claude`, detach, attach to the
+# next. Sessions survive detach/terminal-close and only die when the container is
+# recreated -- which is why this container is excluded from watchtower.
 #
 # Usage:
-#   bin/cc            # attach to (or create) session "main"
-#   CC_SESSION=foo bin/cc
+#   bin/cc <repo>           # attach to (or create) a session for /workspace/<repo>
+#   bin/cc                  # list active sessions and available repos
+#   bin/cc -l | ls | list   # list only
+#   bin/cc -h | --help      # this help
+#   CC_SESSION=foo bin/cc   # back-compat: attach to an arbitrary session name
 #
 # Detach with the tmux prefix (Ctrl-Space) then `d`. Re-run to reattach.
 set -eu
 
 CONTAINER="${CC_CONTAINER:-claude-code}"
-SESSION="${CC_SESSION:-main}"
+WORKDIR="${CC_WORKDIR:-/workspace}"
+
+usage() {
+  cat <<EOF
+Usage:
+  bin/cc <repo>          attach to (or create) a session for $WORKDIR/<repo>
+  bin/cc                 list active sessions and available repos
+  bin/cc -l | ls | list  list only
+  bin/cc -h | --help     this help
+
+Env:
+  CC_CONTAINER  container name (default: claude-code)
+  CC_WORKDIR    workspace root inside the container (default: /workspace)
+  CC_SESSION    attach to an arbitrary session name (cwd \$CC_WORKDIR)
+EOF
+}
+
+# List active tmux sessions and the repos available under the workspace root.
+list() {
+  echo "Active sessions:"
+  docker exec "$CONTAINER" tmux ls 2>/dev/null | sed 's/^/  /' || echo "  (none)"
+  echo
+  echo "Repos under $WORKDIR:"
+  repos="$(docker exec "$CONTAINER" \
+    find "$WORKDIR" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null \
+    | sort || true)"
+  if [ -n "$repos" ]; then
+    printf '%s\n' "$repos" | sed 's/^/  /'
+  else
+    echo "  (none)"
+  fi
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+esac
 
 # Fail early with a clear message if the container is not up.
 if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
@@ -22,4 +65,37 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
   exit 1
 fi
 
-exec docker exec -it "$CONTAINER" tmux new-session -A -s "$SESSION"
+case "${1:-}" in
+  -l | ls | list)
+    list
+    exit 0
+    ;;
+esac
+
+REPO="${1:-}"
+
+if [ -n "$REPO" ]; then
+  # Per-repo session. Validate the directory exists inside the container.
+  if ! docker exec "$CONTAINER" test -d "$WORKDIR/$REPO"; then
+    echo "Repo '$REPO' not found under $WORKDIR in container '$CONTAINER'." >&2
+    echo >&2
+    list >&2
+    exit 1
+  fi
+  # tmux session names cannot contain '.' or ':'; sanitize for the name only.
+  # The working directory is set explicitly below, so the name need not map back.
+  SESSION="$(printf '%s' "$REPO" | tr '.:' '__')"
+  CWD="$WORKDIR/$REPO"
+elif [ -n "${CC_SESSION:-}" ]; then
+  # Back-compat: attach to an arbitrary named session at the workspace root.
+  SESSION="$CC_SESSION"
+  CWD="$WORKDIR"
+else
+  # No repo and no CC_SESSION: show what is running and what is available.
+  list
+  echo
+  echo "Attach to a repo with: bin/cc <repo>"
+  exit 0
+fi
+
+exec docker exec -it "$CONTAINER" tmux new-session -A -s "$SESSION" -c "$CWD"
