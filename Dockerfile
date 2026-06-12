@@ -75,7 +75,8 @@ USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-  | sh -s -- -y --default-toolchain stable --profile minimal
+  | sh -s -- -y --default-toolchain stable --profile minimal \
+  --component clippy --component rustfmt
 ENV PATH="/home/${USERNAME}/.cargo/bin:${PATH}"
 
 WORKDIR /workspace
