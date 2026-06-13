@@ -54,6 +54,13 @@ RUN chmod +x /usr/local/bin/init-firewall.sh
 COPY wt-preupdate.sh /usr/local/bin/wt-preupdate
 RUN chmod +x /usr/local/bin/wt-preupdate
 
+# Host-only helper to install extra apt packages (e.g. valgrind/python3 for
+# profiling) into the running, firewall-locked container. Requires root and is
+# NOT registered in the dev user's sudoers, so it can only be run from the host:
+#   docker exec -u 0 <container> install-tools valgrind python3
+COPY install-tools.sh /usr/local/bin/install-tools
+RUN chmod +x /usr/local/bin/install-tools
+
 # tmux config: set the prefix to Ctrl-Space (does not clash with emacs-style keybindings)
 RUN printf '%s\n' \
   'unbind C-b' \

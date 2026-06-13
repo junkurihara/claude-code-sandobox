@@ -16,8 +16,8 @@ SSH disconnects and terminal closes.
 - **Persistent state via bind mounts.** Workspace, Claude config, and shell
   history live on the host, so they survive container recreation and
   `docker system prune --volumes`.
-- **Preinstalled toolchain.** Node (LTS via `n`), Rust (rustup, stable), tmux,
-  zsh, and common CLI tools.
+- **Preinstalled toolchain.** Node (LTS via `n`), Rust (rustup, stable, with
+  `clippy` and `rustfmt`), tmux, zsh, and common CLI tools.
 
 ## Prerequisites
 
@@ -142,6 +142,32 @@ yourself with `docker compose up -d`.
   until the container is restarted and the firewall re-runs.
 - Allows the host's `/24` network, so the container can reach other services on
   the local network. Tighten this if that is not desired.
+
+### Installing extra packages
+
+The egress firewall blocks the Ubuntu apt mirrors and the `dev` user has no
+`sudo` for `apt`, so you cannot install new packages from inside a running
+container. For one-off needs (e.g. `valgrind` and `python3` for profiling) use
+the `install-tools` helper **from the host**:
+
+```sh
+docker exec -u 0 claude-code install-tools valgrind python3
+```
+
+It temporarily allows the apt mirrors through the firewall, installs the
+requested packages, then restores the locked-down firewall on exit (even if the
+install fails). It requires root and is deliberately **not** in the `dev` user's
+sudoers, so only an operator with host-level `docker` access can run it — the
+in-container user (and any agent running as it) cannot, so the sandbox boundary
+is unchanged.
+
+Notes:
+
+- Installs are **not persistent**: a recreated container (image update, `docker
+  compose up -d`) starts clean. Re-run the helper, or for something you always
+  need, bake it into the `Dockerfile` instead.
+- The apt mirrors use round-robin/CDN DNS, so the helper re-resolves and retries
+  a few times; a transient failure usually clears on a re-run.
 
 ## CI / images
 
