@@ -13,6 +13,15 @@ iptables -t mangle -F
 iptables -t mangle -X
 ipset destroy allowed-domains 2>/dev/null || true
 
+# Reset default policies to ACCEPT so this script is safe to re-run. `iptables -F`
+# flushes rules but NOT policies, so a previous run leaves OUTPUT at DROP; without
+# this reset the GitHub API fetch below would be blocked (and hang) on every
+# re-run, because its allow rule is only added later. The final policy is set back
+# to DROP at the end of this script, so the locked-down end state is unchanged.
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+
 if [ -n "$DOCKER_DNS_RULES" ]; then
     echo "Restoring Docker DNS rules..."
     iptables -t nat -N DOCKER_OUTPUT 2>/dev/null || true
@@ -33,7 +42,7 @@ ipset create allowed-domains hash:net
 
 # ---- GitHub IP ranges (required; abort on failure) ----
 echo "Fetching GitHub IP ranges..."
-gh_ranges=$(curl -s https://api.github.com/meta)
+gh_ranges=$(curl -s --max-time 20 https://api.github.com/meta)
 if [ -z "$gh_ranges" ]; then
     echo "ERROR: Failed to fetch GitHub IP ranges"
     exit 1
